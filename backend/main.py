@@ -11,7 +11,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:3000"], #origins,
     allow_credentials=True,
     allow_methods=["*"],  # allow GET, POST, PUT, DELETE, etc.
     allow_headers=["*"],  # allow all headers
@@ -21,7 +21,7 @@ app.add_middleware(
 cases = [
     {
         "id": 1,
-        "name": "Samuel Nkomo",
+        "name": "SAMUEL FROM BACKEND",
         "age": 34,
         "lastSeen": "Jan 10, 2025 at 2:00 PM",
         "location": "Deido, Douala",

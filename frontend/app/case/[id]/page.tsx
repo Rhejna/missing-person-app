@@ -1,93 +1,116 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
-import { useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import Link from "next/link"
 import { ArrowLeft, MapPin, Clock, Flag, MessageCircle, Phone } from "lucide-react"
 
-// Mock case data
-const fallbackCase = {
-  id: 1,
-  name: "Samuel Nkomo",
-  age: 34,
-  lastSeen: "Jan 10, 2025 at 2:00 PM",
-  location: "Deido, Douala",
-  photo: "/missing-person-male.jpg",
-  status: "missing",
-  verified: true,
-  description: "Last seen wearing blue shirt and dark pants near the market",
-  reporterContact: "Jane Nkomo (Sister)",
-  reporterPhone: "+237 XXX XXX XXX",
-  reportedDate: "Jan 10, 2025",
-  caseNumber: "MISS-2025-0001",
-  updates: [
-    { date: "Jan 12, 2025", status: "Possible sighting near Bonanjo reported", type: "sighting" },
-    { date: "Jan 10, 2025", status: "Case reported and verified", type: "reported" },
-  ],
-  comments: [
-    {
-      id: 1,
-      author: "Anonymous",
-      verified: false,
-      date: "Jan 11, 2025",
-      text: "I saw someone matching this description near the central market yesterday around 3 PM",
-    },
-    {
-      id: 2,
-      author: "John Doe",
-      verified: true,
-      date: "Jan 10, 2025",
-      text: "Please check hospitals in the area. I hope he is found safe.",
-      isOfficer: true,
-    },
-  ],
+// Type pour les données du cas
+interface CaseUpdate {
+  date: string
+  status: string
+  type: string
 }
 
-export default function CasePage({ params }: { params: { id: string } }) {
+interface CaseComment {
+  id: number
+  author: string
+  verified: boolean
+  date: string
+  text: string
+  isOfficer?: boolean
+}
+
+interface CaseData {
+  id: number
+  name: string
+  age: number
+  lastSeen: string
+  location: string
+  photo: string
+  status: string
+  verified: boolean
+  description: string
+  reporterContact: string
+  reporterPhone: string
+  reportedDate: string
+  caseNumber: string
+  updates: CaseUpdate[]
+  comments: CaseComment[]
+}
+
+export default function CasePage({ params }: { params: Promise<{ id: string }> }) {
+  // Extraire les params avec use()
+  const { id } = use(params)
+  
   const [showInfoForm, setShowInfoForm] = useState(false)
   const [showReportForm, setShowReportForm] = useState(false)
   const [infoFormData, setInfoFormData] = useState({ message: "", contact: "" })
-  const [caseData, setCaseData] = useState(fallbackCase)
+  const [caseData, setCaseData] = useState<CaseData | null>(null)
   const [loading, setLoading] = useState(true)
-
-  const handleInfoSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // TODO: Send to FastAPI backend
-    console.log("Info submitted:", infoFormData)
-    setShowInfoForm(false)
-    setInfoFormData({ message: "", contact: "" })
-  }
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchCase = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/cases/${params.id}`)
-        if (!res.ok) throw new Error("Failed to fetch case")
+        console.log("Fetching case with ID:", id); // Debug
+        const res = await fetch(`http://localhost:8000/cases/${id}`)
+        
+        if (!res.ok) {
+          const errorText = await res.text()
+          console.error("Backend error response:", errorText)
+          throw new Error(`Failed to fetch case: ${res.status} - ${errorText}`)
+        }
+        
         const data = await res.json()
+        console.log("Fetched data:", data); // Debug
         setCaseData(data)
       } catch (err) {
-        console.error(err)
+        console.error("Error fetching case:", err)
+        setError(err instanceof Error ? err.message : "Failed to load case")
       } finally {
         setLoading(false)
       }
     }
 
-    fetchCase()
-  }, [params.id])
+    if (id) {
+      fetchCase()
+    }
+  }, [id]) // Dépendance sur id
 
-
-  const statusColor = {
-    missing: "badge-missing",
-    sighting: "badge-sighting",
-    found: "badge-found",
-    closed: "badge-closed",
-  }[caseData.status]
+  const handleInfoSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    console.log("Info submitted:", infoFormData)
+    setShowInfoForm(false)
+    setInfoFormData({ message: "", contact: "" })
+  }
 
   if (loading) {
-    return <div className="p-8 text-muted-foreground">Loading case…</div>
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    )
   }
+
+  if (error || !caseData) {
+    return (
+      <div className="min-h-screen p-8">
+        <div className="text-red-500">Error: {error || "Case not found"}</div>
+        <Link href="/" className="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition mt-4">
+          <ArrowLeft className="w-4 h-4" />
+          <span className="font-semibold">Back to Cases</span>
+        </Link>
+      </div>
+    )
+  }
+
+  const statusColor = {
+    missing: "bg-yellow-500/10 text-yellow-600",
+    sighting: "bg-blue-500/10 text-blue-600",
+    found: "bg-green-500/10 text-green-600",
+    closed: "bg-gray-500/10 text-gray-600",
+  }[caseData.status] || "bg-gray-500/10 text-gray-600"
 
   return (
     <div className="min-h-screen bg-background">
@@ -114,15 +137,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   className="w-full h-full object-cover"
                 />
               </div>
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-4">
                 <div>
                   <h1 className="text-4xl font-semibold text-foreground mb-2">{caseData.name}</h1>
                   <p className="text-lg text-muted-foreground">{caseData.age} years old</p>
                 </div>
-                <span className={`${statusColor} text-sm`}>
-                  {caseData.status.charAt(0).toUpperCase() + caseData.status.slice(1)}
-                </span>
-                {caseData.verified && <div className="badge-verified text-sm">Verified</div>}
+                <div className="flex flex-col items-end gap-2">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor}`}>
+                    {caseData.status.charAt(0).toUpperCase() + caseData.status.slice(1)}
+                  </span>
+                  {caseData.verified && (
+                    <span className="px-3 py-1 rounded-full bg-green-500/10 text-green-600 text-sm font-medium">
+                      Verified
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -281,6 +310,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <p className="font-semibold text-foreground">{comment.author}</p>
+                        {comment.verified && (
+                          <span className="text-xs bg-green-500/10 text-green-600 px-2 py-0.5 rounded">Verified</span>
+                        )}
                         {comment.isOfficer && <p className="text-xs badge-admin">Police Officer</p>}
                       </div>
                       <p className="text-xs text-muted-foreground">{comment.date}</p>
