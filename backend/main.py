@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+from config import MONGODB_URI
 
 app = FastAPI()
 
@@ -16,6 +19,21 @@ app.add_middleware(
     allow_methods=["*"],  # allow GET, POST, PUT, DELETE, etc.
     allow_headers=["*"],  # allow all headers
 )
+
+# MongoDB connection
+uri = MONGODB_URI
+client = MongoClient(uri, server_api=ServerApi('1'))
+# Send a ping to confirm a successful connection
+try:
+    client.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
+
+
+db = client["missing_persons"]
+cases_collection = db["cases"]
+print("Collections:", db.list_collection_names())
 
 # --- Dummy data (NO DB YET) ---
 cases = [
