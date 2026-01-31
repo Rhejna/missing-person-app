@@ -1,8 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from config import MONGODB_URI
+
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
 
 app = FastAPI()
 
@@ -30,75 +35,33 @@ try:
 except Exception as e:
     print(e)
 
-
 db = client["missing_persons"]
 cases_collection = db["cases"]
 print("Collections:", db.list_collection_names())
 
-# --- Dummy data (NO DB YET) ---
-cases = [
-    {
-        "id": 1,
-        "name": "SAMUEL FROM BACKEND",
-        "age": 34,
-        "lastSeen": "Jan 10, 2025 at 2:00 PM",
-        "location": "Deido, Douala",
-        "photo": "/missing-person-male.jpg",
-        "status": "missing",
-        "verified": True,
-        "description": "Last seen wearing blue shirt and dark pants near the market",
-        "reporterContact": "Jane Nkomo (Sister)",
-        "reporterPhone": "+237600000001",
-        "reportedDate": "Jan 10, 2025",
-        "caseNumber": "MISS-2025-0001",
-        "updates": [
-            {
-                "date": "Jan 12, 2025",
-                "status": "Possible sighting near Bonanjo reported",
-                "type": "sighting",
-            },
-            {
-                "date": "Jan 10, 2025",
-                "status": "Case reported and verified",
-                "type": "reported",
-            },
-        ],
-        "comments": [
-            {
-                "id": 1,
-                "author": "Anonymous",
-                "verified": False,
-                "date": "Jan 11, 2025",
-                "text": "I saw someone matching this description near the central market yesterday around 3 PM",
-            }
-        ],
-    },
-    {
-        "id": 2,
-        "name": "Brenda Eyenga",
-        "age": 19,
-        "lastSeen": "Feb 2, 2025 at 6:30 PM",
-        "location": "Bastos, Yaoundé",
-        "photo": "/missing-person-female.jpg",
-        "status": "found",
-        "verified": True,
-        "description": "Left home after an argument, phone unreachable",
-        "reporterContact": "Paul Eyenga (Father)",
-        "reporterPhone": "+237600000002",
-        "reportedDate": "Feb 3, 2025",
-        "caseNumber": "MISS-2025-0002",
-        "updates": [
-            {
-                "date": "Feb 4, 2025",
-                "status": "Found safe at a friend’s place",
-                "type": "found",
-            }
-        ],
-        "comments": [],
-    },
-]
 
-dbCases = list(cases_collection.find({}, {"_id": 0}))
+# --- Case creation ---
+class CaseCreate(BaseModel):
+    firstName: str
+    lastName: str
+    age: int
+    description: str
+    lastSeenLocation: str
+    lastSeenDate: str
+    lastSeenTime: Optional[str] = None
+    reporterName: str
+    reporterRelation: str
+    reporterPhone: str
+    reporterEmail: str
+
+def get_next_case_id():
+    last_case = cases_collection.find_one(
+        sort=[("id", -1)]
+    )
+    if last_case:
+        return last_case["id"] + 1
+    return 1
+
 
 # --- Routes ---
 
@@ -109,11 +72,49 @@ def root():
 @app.get("/cases")
 def get_cases():
     # return cases
-    return dbCases
+    return list(cases_collection.find({}, {"_id": 0}))
 
 @app.get("/cases/{case_id}")
 def get_case(case_id: int):
-    for case in dbCases:
+    for case in list(cases_collection.find({}, {"_id": 0})):
         if case["id"] == case_id:
             return case
     raise HTTPException(status_code=404, detail="Case not found")
+
+@app.post("/cases")
+def create_case(data: CaseCreate):
+    new_id = get_next_case_id()
+
+    full_name = f"{data.firstName} {data.lastName}"
+
+    last_seen = data.lastSeenDate
+    if data.lastSeenTime:
+        last_seen += f" at {data.lastSeenTime}"
+
+    case_document = {
+        "id": new_id,
+        "name": full_name,
+        "age": data.age,
+        "lastSeen": last_seen,
+        "location": data.lastSeenLocation,
+        "photo": "/missing-person-unknown.jpg",
+        "status": "missing",
+        "verified": False,
+        "description": data.description,
+        "reporterContact": f"{data.reporterName} ({data.reporterRelation})",
+        "reporterPhone": data.reporterPhone,
+        "reportedDate": datetime.now().strftime("%b %d, %Y"),
+        "caseNumber": f"MISS-{datetime.now().year}-{str(new_id).zfill(4)}",
+        "updates": [
+            {
+                "date": datetime.now().strftime("%b %d, %Y"),
+                "status": "Case reported",
+                "type": "reported",
+            }
+        ],
+        "comments": [],
+    }
+
+    cases_collection.insert_one(case_document)
+
+    return case_document

@@ -22,10 +22,45 @@ export default function NewCasePage() {
     reporterEmail: "",
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Send to FastAPI backend with file upload
-    console.log("Case submitted:", formData)
+
+    const payload = {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      age: Number(formData.age),
+      description: formData.description,
+      lastSeenLocation: formData.lastSeenLocation,
+      lastSeenDate: formData.lastSeenDate,
+      lastSeenTime: formData.lastSeenTime,
+      reporterName: formData.reporterName,
+      reporterRelation: formData.reporterRelation,
+      reporterPhone: formData.reporterPhone,
+      reporterEmail: formData.reporterEmail,
+    }
+
+    try {
+      const response = await fetch("http://localhost:8000/cases", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to create case")
+      }
+
+      const createdCase = await response.json()
+
+      // redirect to case page
+      window.location.href = `/cases/${createdCase.id}`
+
+    } catch (error) {
+      console.error(error)
+      alert("Something went wrong while submitting the case.")
+    }
   }
 
   return (
