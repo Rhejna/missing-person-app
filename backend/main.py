@@ -23,7 +23,7 @@ app.add_middleware(
 # MongoDB connection
 uri = MONGODB_URI
 client = MongoClient(uri, server_api=ServerApi('1'))
-# Send a ping to confirm a successful connection
+
 try:
     client.admin.command('ping')
     print("Pinged your deployment. You successfully connected to MongoDB!")
@@ -98,6 +98,8 @@ cases = [
     },
 ]
 
+dbCases = list(cases_collection.find({}, {"_id": 0}))
+
 # --- Routes ---
 
 @app.get("/")
@@ -106,11 +108,12 @@ def root():
 
 @app.get("/cases")
 def get_cases():
-    return cases
+    # return cases
+    return dbCases
 
 @app.get("/cases/{case_id}")
 def get_case(case_id: int):
-    for case in cases:
+    for case in dbCases:
         if case["id"] == case_id:
             return case
     raise HTTPException(status_code=404, detail="Case not found")
