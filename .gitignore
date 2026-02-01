@@ -1,4 +1,13 @@
-node_modules
-pycache
-__pycache__
+# Python virtual environment
+venv/
+backend/venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
 .env
+
+# Node (frontend)
+node_modules/

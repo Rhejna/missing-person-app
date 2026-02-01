@@ -26,18 +26,25 @@ app.add_middleware(
 )
 
 # MongoDB connection
-uri = MONGODB_URI
-client = MongoClient(uri, server_api=ServerApi('1'))
+client: MongoClient | None = None
+db = None
+cases_collection = None
 
-try:
-    client.admin.command('ping')
-    print("Pinged your deployment. You successfully connected to MongoDB!")
-except Exception as e:
-    print(e)
+@app.on_event("startup")
+def startup_db():
+    global client, db, cases_collection
+    try:
+        client = MongoClient(
+            MONGODB_URI,
+            server_api=ServerApi("1")
+        )
+        client.admin.command("ping")
+        db = client["missing_persons"]
+        cases_collection = db["cases"]
+        print("✅ Connected to MongoDB")
+    except Exception as e:
+        print("❌ MongoDB connection failed:", e)
 
-db = client["missing_persons"]
-cases_collection = db["cases"]
-print("Collections:", db.list_collection_names())
 
 
 # --- Case creation ---
@@ -64,6 +71,12 @@ def get_next_case_id():
 
 
 # --- Routes ---
+def require_db():
+    if cases_collection is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not connected"
+        )
 
 @app.get("/")
 def root():
@@ -71,11 +84,13 @@ def root():
 
 @app.get("/cases")
 def get_cases():
+    require_db()
     # return cases
     return list(cases_collection.find({}, {"_id": 0}))
 
 @app.get("/cases/{case_id}")
 def get_case(case_id: int):
+    require_db()
     for case in list(cases_collection.find({}, {"_id": 0})):
         if case["id"] == case_id:
             return case
@@ -83,6 +98,7 @@ def get_case(case_id: int):
 
 @app.post("/cases")
 def create_case(data: CaseCreate):
+    require_db()
     new_id = get_next_case_id()
 
     full_name = f"{data.firstName} {data.lastName}"
