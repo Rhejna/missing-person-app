@@ -57,13 +57,14 @@ function CaseCard({ case: caseItem }: { case: CaseCardData }) {
   }
 
   const status = statusLabels[caseItem.status]
+  const BACKEND_URL = "http://localhost:8000";
 
   return (
     <Link href={`/case/${caseItem.id}`}>
       <div className="bg-card rounded-md overflow-hidden hover:shadow-lg transition-shadow border border-border cursor-pointer group">
         <div className="aspect-square overflow-hidden bg-muted">
           <img
-            src={caseItem.photo || "/placeholder.svg"}
+            src={caseItem.photo.startsWith('http') ? caseItem.photo : `${BACKEND_URL}${caseItem.photo}`} 
             alt={caseItem.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform"
           />

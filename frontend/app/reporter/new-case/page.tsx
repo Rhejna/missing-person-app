@@ -2,11 +2,14 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import Link from "next/link"
 import { ArrowLeft, Upload } from "lucide-react"
 
+
+
 export default function NewCasePage() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -25,41 +28,42 @@ export default function NewCasePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const payload = {
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      age: Number(formData.age),
-      description: formData.description,
-      lastSeenLocation: formData.lastSeenLocation,
-      lastSeenDate: formData.lastSeenDate,
-      lastSeenTime: formData.lastSeenTime,
-      reporterName: formData.reporterName,
-      reporterRelation: formData.reporterRelation,
-      reporterPhone: formData.reporterPhone,
-      reporterEmail: formData.reporterEmail,
+    // On utilise FormData pour envoyer des fichiers
+    const formDataToSend = new FormData()
+    
+    // On ajoute tous les champs texte
+    formDataToSend.append("firstName", formData.firstName)
+    formDataToSend.append("lastName", formData.lastName)
+    formDataToSend.append("age", formData.age)
+    formDataToSend.append("description", formData.description)
+    formDataToSend.append("lastSeenLocation", formData.lastSeenLocation)
+    formDataToSend.append("lastSeenDate", formData.lastSeenDate)
+    formDataToSend.append("lastSeenTime", formData.lastSeenTime)
+    formDataToSend.append("reporterName", formData.reporterName)
+    formDataToSend.append("reporterRelation", formData.reporterRelation)
+    formDataToSend.append("reporterPhone", formData.reporterPhone)
+    formDataToSend.append("reporterEmail", formData.reporterEmail)
+
+    // On ajoute le fichier image
+    if (formData.photo) {
+      formDataToSend.append("photo", formData.photo)
     }
 
     try {
       const response = await fetch("http://localhost:8000/cases", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+        // IMPORTANT: Ne pas mettre de "Content-Type" header, 
+        // le navigateur le fera automatiquement avec le boundary correct.
+        body: formDataToSend,
       })
 
-      if (!response.ok) {
-        throw new Error("Failed to create case")
-      }
+      if (!response.ok) throw new Error("Failed to create case")
 
       const createdCase = await response.json()
-
-      // redirect to case page
       window.location.href = `/case/${createdCase.id}`
-
     } catch (error) {
       console.error(error)
-      alert("Something went wrong while submitting the case.")
+      alert("Something went wrong.")
     }
   }
 
@@ -133,15 +137,39 @@ export default function NewCasePage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">Photo</label>
-              <div className="border-2 border-dashed border-border rounded-md p-6 text-center cursor-pointer hover:border-primary transition">
-                <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-foreground font-medium">Click to upload or drag and drop</p>
-                <p className="text-xs text-muted-foreground">PNG, JPG up to 10MB</p>
+              <div 
+                onClick={() => fileInputRef.current?.click()} 
+                className="border-2 border-dashed border-border rounded-md p-6 text-center cursor-pointer hover:border-primary transition overflow-hidden"
+              >
+                {/* Si une photo est sélectionnée, on l'affiche, sinon on montre l'icône Upload */}
+                {formData.photo ? (
+                  <div className="space-y-2">
+                    <img 
+                      src={URL.createObjectURL(formData.photo)} 
+                      alt="Preview" 
+                      className="max-h-48 mx-auto rounded-md object-cover"
+                    />
+                    <p className="text-xs text-primary font-medium underline">Changer la photo</p>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-foreground font-medium">Click to upload</p>
+                    <p className="text-xs text-muted-foreground">PNG, JPG up to 10MB</p>
+                  </>
+                )}
+
                 <input
                   type="file"
+                  ref={fileInputRef}
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => setFormData({ ...formData, photo: e.target.files?.[0] || null })}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setFormData({ ...formData, photo: file });
+                    }
+                  }}
                 />
               </div>
             </div>

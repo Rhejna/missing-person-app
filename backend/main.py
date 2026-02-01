@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
@@ -11,6 +12,7 @@ from typing import Optional
 from datetime import datetime
 
 app = FastAPI()
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # CORS configuration
 origins = [
@@ -97,29 +99,53 @@ def get_case(case_id: int):
             return case
     raise HTTPException(status_code=404, detail="Case not found")
 
+# Créez un dossier pour stocker les images
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
 @app.post("/cases")
-def create_case(data: CaseCreate):
+async def create_case(
+    firstName: str = Form(...),
+    lastName: str = Form(...),
+    age: int = Form(...),
+    description: str = Form(...),
+    lastSeenLocation: str = Form(...),
+    lastSeenDate: str = Form(...),
+    reporterName: str = Form(...),
+    reporterRelation: str = Form(...),
+    reporterPhone: str = Form(...),
+    reporterEmail: str = Form(...),
+    lastSeenTime: Optional[str] = Form(None),
+    photo: UploadFile = File(...)
+):
     require_db()
     new_id = get_next_case_id()
 
-    full_name = f"{data.firstName} {data.lastName}"
+    last_seen = lastSeenDate
+    if lastSeenTime:
+        last_seen += f" at {lastSeenTime}"
 
-    last_seen = data.lastSeenDate
-    if data.lastSeenTime:
-        last_seen += f" at {data.lastSeenTime}"
+    # Sauvegarde de l'image
+    file_extension = photo.filename.split(".")[-1]
+    file_name = f"case_{new_id}.{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, file_name)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(photo.file, buffer)
 
     case_document = {
         "id": new_id,
-        "name": full_name,
-        "age": data.age,
+        "name": f"{firstName} {lastName}",
+        "age": age,
         "lastSeen": last_seen,
-        "location": data.lastSeenLocation,
-        "photo": "/missing-person-unknown.jpg",
+        "location": lastSeenLocation,
+        "photo": f"/uploads/{file_name}",
         "status": "missing",
         "verified": False,
-        "description": data.description,
-        "reporterContact": f"{data.reporterName} ({data.reporterRelation})",
-        "reporterPhone": data.reporterPhone,
+        "description": description,
+        "reporterContact": f"{reporterName} ({reporterRelation})",
+        "reporterPhone": reporterPhone,
         "reportedDate": datetime.now().strftime("%b %d, %Y"),
         "caseNumber": f"MISS-{datetime.now().year}-{str(new_id).zfill(4)}",
         "updates": [
@@ -133,8 +159,6 @@ def create_case(data: CaseCreate):
     }
 
     cases_collection.insert_one(case_document)
-
-    # ✅ IMPORTANT LINE
     case_document.pop("_id", None)
 
     return case_document

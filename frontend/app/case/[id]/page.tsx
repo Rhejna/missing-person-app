@@ -112,6 +112,8 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
     closed: "bg-gray-500/10 text-gray-600",
   }[caseData.status] || "bg-gray-500/10 text-gray-600"
 
+  const BACKEND_URL = "http://localhost:8000";
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -132,8 +134,8 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
             <div className="space-y-4">
               <div className="aspect-square rounded-md overflow-hidden bg-muted">
                 <img
-                  src={caseData.photo || "/placeholder.svg"}
-                  alt={caseData.name}
+                  src={caseData.photo.startsWith('http') ? caseData.photo : `${BACKEND_URL}${caseData.photo}`} 
+                  alt={caseData.name} 
                   className="w-full h-full object-cover"
                 />
               </div>
