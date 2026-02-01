@@ -55,7 +55,7 @@ export default function NewCasePage() {
       const createdCase = await response.json()
 
       // redirect to case page
-      window.location.href = `/cases/${createdCase.id}`
+      window.location.href = `/case/${createdCase.id}`
 
     } catch (error) {
       console.error(error)

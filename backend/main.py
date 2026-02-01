@@ -1,13 +1,14 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+import shutil
+import os
 from config import MONGODB_URI
 
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-
 
 app = FastAPI()
 
@@ -132,5 +133,8 @@ def create_case(data: CaseCreate):
     }
 
     cases_collection.insert_one(case_document)
+
+    # ✅ IMPORTANT LINE
+    case_document.pop("_id", None)
 
     return case_document
