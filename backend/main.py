@@ -1,15 +1,22 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form, APIRouter, Depends, status, Request, Response
+from fastapi.responses import RedirectResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 import shutil
 import os
-from config import MONGODB_URI
+from config import MONGODB_URI, SECRET_KEY, ALGORITHM
+
 
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+
+from pydantic import EmailStr
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 app = FastAPI()
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
@@ -35,7 +42,7 @@ cases_collection = None
 
 @app.on_event("startup")
 def startup_db():
-    global client, db, cases_collection
+    global client, db, cases_collection, users_collection
     try:
         client = MongoClient(
             MONGODB_URI,
@@ -43,7 +50,8 @@ def startup_db():
         )
         client.admin.command("ping")
         db = client["missing_persons"]
-        cases_collection = db["cases"]
+        cases_collection = db["cases"] 
+        users_collection = db["users"]
         print("✅ Connected to MongoDB")
     except Exception as e:
         print("❌ MongoDB connection failed:", e)
@@ -63,6 +71,33 @@ class CaseCreate(BaseModel):
     reporterRelation: str
     reporterPhone: str
     reporterEmail: str
+
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+class UserSignup(BaseModel):
+    email: EmailStr
+    password: str
+    phone: str
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+def hash_password(password: str):
+    return pwd_context.hash(password)
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=60))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
 
 def get_next_case_id():
     last_case = cases_collection.find_one(
@@ -84,6 +119,50 @@ def require_db():
 @app.get("/")
 def root():
     return {"status": "API is running"}
+
+@app.post("/auth/signup")
+def signup(user: UserSignup):
+    require_db()
+
+    existing_user = users_collection.find_one({"email": user.email})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    hashed_pw = hash_password(user.password)
+
+    user_document = {
+        "email": user.email,
+        "password": hashed_pw,
+        "phone": user.phone,
+        "createdAt": datetime.utcnow()
+    }
+
+    users_collection.insert_one(user_document)
+
+    return {"message": "User created successfully"}
+
+
+@app.post("/auth/login")
+def login(user: UserLogin):
+    require_db()
+
+    db_user = users_collection.find_one({"email": user.email})
+
+    if not db_user:
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+    if not verify_password(user.password, db_user["password"]):
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+    access_token = create_access_token(
+        data={"sub": user.email}
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+
 
 @app.get("/cases")
 def get_cases():

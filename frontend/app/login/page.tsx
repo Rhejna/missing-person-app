@@ -5,20 +5,63 @@ import type React from "react"
 import { useState } from "react"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [phone, setPhone] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"login" | "signup">("login")
+  const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    // TODO: Connect to FastAPI backend
-    // await fetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) })
-    setTimeout(() => setIsLoading(false), 1000)
+
+    try {
+      const endpoint =
+        activeTab === "login"
+          ? "http://127.0.0.1:8000/auth/login"
+          : "http://127.0.0.1:8000/auth/signup"
+
+      const body =
+        activeTab === "login"
+          ? { email, password }
+          : { email, password, phone: "+237000000000" } // replace with real state
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        alert(data.detail || "Something went wrong")
+        return
+      }
+
+      // Only login returns token
+      if (data.access_token) {
+        localStorage.setItem("token", data.access_token)
+
+        // Redirect to homepage
+        router.push("/")
+      } else {
+        // After signup, automatically switch to login
+        setActiveTab("login")
+        alert("Account created. Please login.")
+      }
+
+    } catch (err) {
+      alert("Server error")
+    } finally {
+      setIsLoading(false)
+    }
   }
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -93,6 +136,8 @@ export default function LoginPage() {
               <label className="block text-sm font-medium text-foreground mb-2">Phone Number (OTP Verification)</label>
               <input
                 type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-border rounded-md bg-input text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="+237 XXX XXX XXX"
