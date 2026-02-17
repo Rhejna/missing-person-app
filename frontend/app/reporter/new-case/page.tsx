@@ -49,11 +49,14 @@ export default function NewCasePage() {
       formDataToSend.append("photo", formData.photo)
     }
 
+    const token = localStorage.getItem("token")
+
     try {
       const response = await fetch("http://localhost:8000/cases", {
         method: "POST",
-        // IMPORTANT: Ne pas mettre de "Content-Type" header, 
-        // le navigateur le fera automatiquement avec le boundary correct.
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formDataToSend,
       })
 

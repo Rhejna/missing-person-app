@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form, APIRouter, Depends, status, Request, Response
 from fastapi.responses import RedirectResponse
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo.mongo_client import MongoClient
@@ -9,12 +9,9 @@ import shutil
 import os
 from config import MONGODB_URI, SECRET_KEY, ALGORITHM
 
-
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta
-
-from pydantic import EmailStr
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -34,6 +31,8 @@ app.add_middleware(
     allow_methods=["*"],  # allow GET, POST, PUT, DELETE, etc.
     allow_headers=["*"],  # allow all headers
 )
+
+security = HTTPBearer()
 
 # MongoDB connection
 client: MongoClient | None = None
@@ -84,7 +83,6 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-
 def hash_password(password: str):
     return pwd_context.hash(password)
 
@@ -97,7 +95,16 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 def get_next_case_id():
     last_case = cases_collection.find_one(
@@ -137,9 +144,12 @@ def signup(user: UserSignup):
         "createdAt": datetime.utcnow()
     }
 
-    users_collection.insert_one(user_document)
+    result = users_collection.insert_one(user_document)
 
-    return {"message": "User created successfully"}
+    return {
+        "message": "User created successfully",
+        "user_id": str(result.inserted_id)
+    }
 
 
 @app.post("/auth/login")
@@ -155,7 +165,10 @@ def login(user: UserLogin):
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     access_token = create_access_token(
-        data={"sub": user.email}
+        data={
+            "sub": user.email,
+            "user_id": str(db_user["_id"])
+        }
     )
 
     return {
@@ -185,6 +198,7 @@ if not os.path.exists(UPLOAD_DIR):
 
 @app.post("/cases")
 async def create_case(
+    user_id: str = Depends(get_current_user),
     firstName: str = Form(...),
     lastName: str = Form(...),
     age: int = Form(...),
@@ -215,6 +229,7 @@ async def create_case(
 
     case_document = {
         "id": new_id,
+        "user_id": user_id,
         "name": f"{firstName} {lastName}",
         "age": age,
         "lastSeen": last_seen,

@@ -5,7 +5,8 @@ import type React from "react"
 import { useState } from "react"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
+
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -14,6 +15,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"login" | "signup">("login")
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get("redirect")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,7 +51,7 @@ export default function LoginPage() {
         localStorage.setItem("token", data.access_token)
 
         // Redirect to homepage
-        router.push("/")
+        router.push(redirect || "/")
       } else {
         // After signup, automatically switch to login
         setActiveTab("login")

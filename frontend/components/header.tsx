@@ -22,7 +22,7 @@ export default function Header() {
               Cases
             </Link>
             <Link
-              href="/login"
+              href="/login?redirect=/reporter"
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-semibold hover:bg-primary/90 transition"
             >
               Report Missing Person
@@ -45,7 +45,7 @@ export default function Header() {
               Cases
             </Link>
             <Link
-              href="/login"
+              href="/login?redirect=/reporter" 
               className="block px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-semibold hover:bg-primary/90 transition text-center"
             >
               Report Missing Person
