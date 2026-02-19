@@ -45,12 +45,12 @@ export default function Header() {
               Cases
             </Link>
             <Link
-              href="/login?redirect=/reporter" 
+              href="/login?redirect=/reporter/new-case" 
               className="block px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-semibold hover:bg-primary/90 transition text-center"
             >
               Report Missing Person
             </Link>
-            <Link href="/reporter" className="block text-foreground hover:text-primary transition">
+            <Link href="/login?redirect=/reporter" className="block text-foreground hover:text-primary transition">
               My Cases
             </Link>
           </nav>

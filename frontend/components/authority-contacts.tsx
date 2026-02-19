@@ -37,55 +37,48 @@ export default function AuthorityContacts() {
     }
   }, [])
 
-  const fetchNearestAuthorities = async (lat: number, lng: number) => {
-    try {
-      const response = await fetch(`/api/authorities?lat=${lat}&lng=${lng}&radius=10`)
-      if (response.ok) {
-        const data = await response.json()
-        setAuthorities(data)
-      }
-    } catch (error) {
-      // Mock data for Douala
-      setAuthorities([
-        {
-          name: "DGSN Douala - Central Station",
-          type: "police",
-          phone: "+237 6 71 23 45 67",
-          address: "New Bell, Douala",
-          hours: "24/7",
-          distance: "2.1 km",
-          coordinates: { lat: 4.0511, lng: 9.7679 },
-        },
-        {
-          name: "DGSN Bonamoussadi Station",
-          type: "police",
-          phone: "+237 6 71 34 56 78",
-          address: "Bonamoussadi, Douala",
-          hours: "24/7",
-          distance: "4.3 km",
-          coordinates: { lat: 4.0381, lng: 9.7811 },
-        },
-        {
-          name: "Douala Hospital Emergency",
-          type: "hospital",
-          phone: "+237 6 70 00 11 22",
-          address: "Akwa, Douala",
-          hours: "24/7",
-          distance: "1.8 km",
-          coordinates: { lat: 4.0556, lng: 9.7744 },
-        },
-        {
-          name: "International Red Cross - Douala",
-          type: "ngo",
-          phone: "+237 2 33 12 34 56",
-          address: "Bonamoussadi, Douala",
-          hours: "08:00 - 20:00",
-          distance: "3.5 km",
-          coordinates: { lat: 4.0381, lng: 9.7811 },
-        },
-      ])
-    }
+  const fetchNearestAuthorities = (lat: number, lng: number) => {
+    // For now, use static data
+    setAuthorities([
+      {
+        name: "DGSN Douala - Central Station",
+        type: "police",
+        phone: "+237 6 71 23 45 67",
+        address: "New Bell, Douala",
+        hours: "24/7",
+        distance: "2.1 km",
+        coordinates: { lat: 4.0511, lng: 9.7679 },
+      },
+      {
+        name: "DGSN Bonamoussadi Station",
+        type: "police",
+        phone: "+237 6 71 34 56 78",
+        address: "Bonamoussadi, Douala",
+        hours: "24/7",
+        distance: "4.3 km",
+        coordinates: { lat: 4.0381, lng: 9.7811 },
+      },
+      {
+        name: "Douala Hospital Emergency",
+        type: "hospital",
+        phone: "+237 6 70 00 11 22",
+        address: "Akwa, Douala",
+        hours: "24/7",
+        distance: "1.8 km",
+        coordinates: { lat: 4.0556, lng: 9.7744 },
+      },
+      {
+        name: "International Red Cross - Douala",
+        type: "ngo",
+        phone: "+237 2 33 12 34 56",
+        address: "Bonamoussadi, Douala",
+        hours: "08:00 - 20:00",
+        distance: "3.5 km",
+        coordinates: { lat: 4.0381, lng: 9.7811 },
+      },
+    ])
   }
+
 
   const getTypeColor = (type: string) => {
     switch (type) {

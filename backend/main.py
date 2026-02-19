@@ -8,6 +8,8 @@ from pymongo.server_api import ServerApi
 import shutil
 import os
 from config import MONGODB_URI, SECRET_KEY, ALGORITHM
+from logs import create_log
+from bson import ObjectId
 
 from pydantic import BaseModel, EmailStr
 from typing import Optional
@@ -71,13 +73,13 @@ class CaseCreate(BaseModel):
     reporterPhone: str
     reporterEmail: str
 
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class UserSignup(BaseModel):
     email: EmailStr
     password: str
     phone: str
+    fullName: str
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -127,8 +129,9 @@ def require_db():
 def root():
     return {"status": "API is running"}
 
+
 @app.post("/auth/signup")
-def signup(user: UserSignup):
+def signup(user: UserSignup, request: Request):
     require_db()
 
     existing_user = users_collection.find_one({"email": user.email})
@@ -141,10 +144,13 @@ def signup(user: UserSignup):
         "email": user.email,
         "password": hashed_pw,
         "phone": user.phone,
+        "fullName": user.fullName,
         "createdAt": datetime.utcnow()
     }
 
     result = users_collection.insert_one(user_document)
+
+    create_log(db, "user_signup", str(result.inserted_id), f"New user: {user.email}", request)
 
     return {
         "message": "User created successfully",
@@ -153,15 +159,17 @@ def signup(user: UserSignup):
 
 
 @app.post("/auth/login")
-def login(user: UserLogin):
+def login(user: UserLogin, request: Request):
     require_db()
 
     db_user = users_collection.find_one({"email": user.email})
 
     if not db_user:
+        create_log(db, "login_failed", None, f"Failed login: {user.email}", request)
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     if not verify_password(user.password, db_user["password"]):
+        create_log(db, "login_failed", None, f"Failed login: {user.email}", request)
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     access_token = create_access_token(
@@ -171,11 +179,27 @@ def login(user: UserLogin):
         }
     )
 
+    create_log(db, "user_login", str(db_user["_id"]), f"Login success: {user.email}", request)
+
     return {
         "access_token": access_token,
         "token_type": "bearer"
     }
 
+@app.get("/me")
+def get_me(user_id: str = Depends(get_current_user)):
+    require_db()
+
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "fullName": user["fullName"],
+        "email": user["email"],
+        "phone": user["phone"]
+    }
 
 @app.get("/cases")
 def get_cases():
@@ -183,13 +207,27 @@ def get_cases():
     # return cases
     return list(cases_collection.find({}, {"_id": 0}))
 
+
 @app.get("/cases/{case_id}")
 def get_case(case_id: int):
     require_db()
     for case in list(cases_collection.find({}, {"_id": 0})):
         if case["id"] == case_id:
+            # create_log(db, "case_viewed", None, f"Case ID: {case_id}")
             return case
     raise HTTPException(status_code=404, detail="Case not found")
+
+@app.get("/my-cases")
+def get_my_cases(user_id: str = Depends(get_current_user)):
+    require_db()
+    cases = list(
+        cases_collection.find(
+            {"user_id": user_id},
+            {"_id": 0}
+        )
+    )
+    return cases
+
 
 # Créez un dossier pour stocker les images
 UPLOAD_DIR = "uploads"
@@ -198,6 +236,7 @@ if not os.path.exists(UPLOAD_DIR):
 
 @app.post("/cases")
 async def create_case(
+    request: Request,
     user_id: str = Depends(get_current_user),
     firstName: str = Form(...),
     lastName: str = Form(...),
@@ -253,6 +292,7 @@ async def create_case(
     }
 
     cases_collection.insert_one(case_document)
+    create_log(db, "case_created", user_id, f"Case ID: {new_id}", request)
     case_document.pop("_id", None)
 
     return case_document

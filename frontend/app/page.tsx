@@ -174,7 +174,7 @@ export default function Home() {
                 to help bring missing people back to their families in Douala.
               </p>
               <Link
-                href="/login"
+                href="/login?redirect=/reporter/new-case"
                 className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-semibold hover:bg-primary/90 transition"
               >
                 Report a Missing Person

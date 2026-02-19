@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { ArrowLeft, Upload } from "lucide-react"
 
@@ -69,6 +69,37 @@ export default function NewCasePage() {
       alert("Something went wrong.")
     }
   }
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const token = localStorage.getItem("token")
+      if (!token) return
+
+      try {
+        const res = await fetch("http://localhost:8000/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!res.ok) return
+
+        const user = await res.json()
+
+        setFormData((prev) => ({
+          ...prev,
+          reporterName: user.fullName || "",
+          reporterEmail: user.email || "",
+          reporterPhone: user.phone || "",
+        }))
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    fetchUser()
+  }, [])
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -218,6 +249,9 @@ export default function NewCasePage() {
           {/* Reporter details */}
           <section className="bg-card border border-border rounded-md p-6 space-y-4">
             <h2 className="text-lg font-semibold text-foreground">Your Information</h2>
+            <p className="text-xs text-muted-foreground">
+              You can modify this if you are reporting on behalf of someone else.
+            </p>
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">Your Name</label>
               <input

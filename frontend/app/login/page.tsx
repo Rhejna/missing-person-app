@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [phone, setPhone] = useState("")
+  const [fullName, setFullName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"login" | "signup">("login")
   const router = useRouter()
@@ -31,7 +32,7 @@ export default function LoginPage() {
       const body =
         activeTab === "login"
           ? { email, password }
-          : { email, password, phone: "+237000000000" } // replace with real state
+          : { fullName, email, password, phone: "+237000000000" } // replace with real state
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -110,6 +111,20 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {activeTab === "signup" && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">FullName</label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-border rounded-md bg-input text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Jane Doe"
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">Email Address</label>
             <input
