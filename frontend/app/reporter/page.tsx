@@ -116,7 +116,7 @@ export default function ReporterPage() {
                   </span>
 
                   <Link
-                    href={`/case/${caseItem.id}`}
+                    href={`/reporter/edit/${caseItem.id}`}
                     className="text-primary hover:text-primary/80 transition"
                   >
                     <Edit className="w-4 h-4" />

@@ -205,28 +205,60 @@ def get_me(user_id: str = Depends(get_current_user)):
 def get_cases():
     require_db()
     # return cases
-    return list(cases_collection.find({}, {"_id": 0}))
+    cases = list(
+        cases_collection.find(
+            {"deleted": False},
+            {"_id": 0}
+        )
+    )
+
+    return cases
 
 
 @app.get("/cases/{case_id}")
 def get_case(case_id: int):
     require_db()
-    for case in list(cases_collection.find({}, {"_id": 0})):
-        if case["id"] == case_id:
-            # create_log(db, "case_viewed", None, f"Case ID: {case_id}")
-            return case
-    raise HTTPException(status_code=404, detail="Case not found")
+    # This happens on the database server, which is extremely fast
+    case = cases_collection.find_one(
+        {
+            "id": case_id,
+            "deleted": False
+        }, 
+        {"_id": 0})
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
 
 @app.get("/my-cases")
 def get_my_cases(user_id: str = Depends(get_current_user)):
     require_db()
     cases = list(
         cases_collection.find(
-            {"user_id": user_id},
+            {"user_id": user_id, "deleted": False},
             {"_id": 0}
         )
     )
     return cases
+
+
+@app.get("/cases/{case_id}/edit")
+def get_case_for_edit(case_id: int, user_id: str = Depends(get_current_user)):
+    require_db()
+
+    case = cases_collection.find_one(
+        {
+            "id": case_id,
+            "user_id": user_id,
+            "deleted": False
+        },
+        {"_id": 0}
+    )
+
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    return case
+
 
 
 # Créez un dossier pour stocker les images
@@ -275,6 +307,7 @@ async def create_case(
         "location": lastSeenLocation,
         "photo": f"/uploads/{file_name}",
         "status": "missing",
+        "deleted": False,
         "verified": False,
         "description": description,
         "reporterContact": f"{reporterName} ({reporterRelation})",
@@ -296,3 +329,109 @@ async def create_case(
     case_document.pop("_id", None)
 
     return case_document
+
+
+@app.put("/cases/{case_id}")
+async def update_case(
+    request: Request,
+    case_id: int,
+    firstName: str = Form(...),
+    lastName: str = Form(...),
+    age: int = Form(...),
+    description: str = Form(...),
+    lastSeenLocation: str = Form(...),
+    lastSeenDate: str = Form(...),
+    reporterName: str = Form(...),
+    reporterRelation: str = Form(...),
+    reporterPhone: str = Form(...),
+    reporterEmail: Optional[str] = Form(None), # Made Optional
+    lastSeenTime: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    user_id: str = Depends(get_current_user),
+):
+    require_db()
+
+    case = cases_collection.find_one({"id": case_id, "user_id": user_id})
+    if not case:
+        raise HTTPException(status_code=404, detail="Not allowed")
+
+    # Combine them back into the DB format
+    if lastSeenTime:
+        combined_last_seen = f"{lastSeenDate} at {lastSeenTime}"
+    else:
+        combined_last_seen = lastSeenDate
+
+    update_data = {
+        "name": f"{firstName} {lastName}",
+        "age": age,
+        "description": description,
+        "location": lastSeenLocation,
+        "reporterContact": f"{reporterName} ({reporterRelation})",
+        "reporterPhone": reporterPhone,
+        # Ensure we keep these fields updated for the frontend fetch
+        "lastSeen": combined_last_seen,
+    }
+
+    if photo:
+        file_extension = photo.filename.split(".")[-1]
+        file_name = f"case_{case_id}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+
+        update_data["photo"] = f"/uploads/{file_name}"
+
+    cases_collection.update_one({"id": case_id}, {"$set": update_data})
+
+    # NEW LOG
+    create_log(db, "case_updated", user_id, f"Case ID: {case_id}", request)
+
+    return {"message": "Case updated successfully"}
+
+@app.patch("/cases/{case_id}/status")
+def update_status(request: Request, case_id: int, new_status: str, user_id: str = Depends(get_current_user)):
+    require_db()
+
+    case = cases_collection.find_one({"id": case_id, "user_id": user_id})
+    if not case:
+        raise HTTPException(status_code=404)
+
+    cases_collection.update_one(
+        {"id": case_id},
+        {
+            "$set": {"status": new_status},
+            "$push": {
+                "updates": {
+                    "date": datetime.now().strftime("%b %d, %Y"),
+                    "status": f"Status changed to {new_status}",
+                    "type": "status_update",
+                }
+            }
+        }
+    )
+
+    # NEW LOG
+    create_log(db, "status_changed", user_id, f"Case {case_id} moved to {new_status}", request)
+
+    return {"message": "Status updated"}
+
+
+@app.patch("/cases/{case_id}/delete")
+def delete_case(request: Request, case_id: int, user_id: str = Depends(get_current_user)):
+    require_db()
+
+    case = cases_collection.find_one({"id": case_id, "user_id": user_id})
+    if not case:
+        raise HTTPException(status_code=404)
+
+    cases_collection.update_one(
+        {"id": case_id},
+        {"$set": {"deleted": True}}
+    )
+
+    # NEW LOG
+    create_log(db, "case_archived", user_id, f"Case ID: {case_id} was deleted/archived", request)
+
+    return {"message": "Case archived"}
+
