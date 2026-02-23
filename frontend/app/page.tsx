@@ -8,7 +8,8 @@ import AuthorityContacts from "@/components/authority-contacts"
 
 // Type pour les données du cas
 interface CaseData {
-  id: number
+  _id: string
+  slug: string
   name: string
   age: number
   lastSeen: string
@@ -37,7 +38,8 @@ interface CaseData {
 
 // Type simplifié pour l'affichage des cartes
 interface CaseCardData {
-  id: number
+  _id: string
+  slug: string
   name: string
   age: number
   lastSeen: string
@@ -60,7 +62,8 @@ function CaseCard({ case: caseItem }: { case: CaseCardData }) {
   const BACKEND_URL = "http://localhost:8000";
 
   return (
-    <Link href={`/case/${caseItem.id}`}>
+    // <Link href={`/case/${caseItem._id}`}>
+    <Link href={`/case/${caseItem.slug}`}>
       <div className="bg-card rounded-md overflow-hidden hover:shadow-lg transition-shadow border border-border cursor-pointer group">
         <div className="aspect-square overflow-hidden bg-muted">
           <img
@@ -109,7 +112,8 @@ export default function Home() {
   // Fonction pour formatter les données du backend pour l'affichage
   const formatCaseForCard = (caseData: CaseData): CaseCardData => {
     return {
-      id: caseData.id,
+      _id: caseData._id,
+      slug: caseData.slug,
       name: caseData.name,
       age: caseData.age,
       lastSeen: caseData.lastSeen,
@@ -248,7 +252,7 @@ export default function Home() {
                 {filteredCases.length > 0 ? (
                   <div className="grid sm:grid-cols-2 gap-6">
                     {filteredCases.map((caseItem) => (
-                      <CaseCard key={caseItem.id} case={caseItem} />
+                      <CaseCard key={caseItem._id} case={caseItem} />
                     ))}
                   </div>
                 ) : (

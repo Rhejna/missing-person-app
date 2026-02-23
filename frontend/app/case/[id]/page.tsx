@@ -22,7 +22,8 @@ interface CaseComment {
 }
 
 interface CaseData {
-  id: number
+  _id: string
+  slug: string
   name: string
   age: number
   lastSeen: string
@@ -40,33 +41,33 @@ interface CaseData {
 }
 
 export default function CasePage({ params }: { params: Promise<{ id: string }> }) {
-  // Extraire les params avec use()
-  const { id } = use(params)
+  // Next.js uses the folder name [id], so we extract 'id' 
+  // but we know it contains the slug (e.g., "brenda-eyenga-j660")
+  const { id } = use(params) 
   
-  const [showInfoForm, setShowInfoForm] = useState(false)
-  const [showReportForm, setShowReportForm] = useState(false)
-  const [infoFormData, setInfoFormData] = useState({ message: "", contact: "" })
   const [caseData, setCaseData] = useState<CaseData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showInfoForm, setShowInfoForm] = useState(false)
+  const [showReportForm, setShowReportForm] = useState(false)
+  const [infoFormData, setInfoFormData] = useState({ message: "", contact: "" })
 
   useEffect(() => {
     const fetchCase = async () => {
       try {
-        console.log("Fetching case with ID:", id); // Debug
-        const res = await fetch(`http://localhost:8000/cases/${id}`)
+        setLoading(true)
+        // We use the 'id' variable here because that's what Next.js 
+        // named the URL segment
+        const res = await fetch(`http://localhost:8000/cases/view/${id}`)
         
         if (!res.ok) {
-          const errorText = await res.text()
-          console.error("Backend error response:", errorText)
-          throw new Error(`Failed to fetch case: ${res.status} - ${errorText}`)
+          throw new Error(`Case not found (${res.status})`)
         }
         
         const data = await res.json()
-        console.log("Fetched data:", data); // Debug
         setCaseData(data)
+        setError(null)
       } catch (err) {
-        console.error("Error fetching case:", err)
         setError(err instanceof Error ? err.message : "Failed to load case")
       } finally {
         setLoading(false)
@@ -76,7 +77,7 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
     if (id) {
       fetchCase()
     }
-  }, [id]) // Dépendance sur id
+  }, [id])
 
   const handleInfoSubmit = (e: React.FormEvent) => {
     e.preventDefault()

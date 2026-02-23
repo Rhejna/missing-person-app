@@ -86,12 +86,12 @@ export default function ReporterPage() {
           ) : (
             cases.map((caseItem) => (
               <div
-                key={caseItem.id}
+                key={caseItem._id}
                 className="bg-card border border-border rounded-md p-6 flex items-center justify-between"
               >
                 <div className="space-y-2">
                   <h3 className="font-semibold text-foreground text-lg">
-                    <a href={`/case/${caseItem.id}`}>
+                    <a href={`/case/${caseItem.slug}`}>
                       {caseItem.name}
                     </a>
                   </h3>
@@ -116,7 +116,7 @@ export default function ReporterPage() {
                   </span>
 
                   <Link
-                    href={`/reporter/edit/${caseItem.id}`}
+                    href={`/reporter/edit/${caseItem._id}`}
                     className="text-primary hover:text-primary/80 transition"
                   >
                     <Edit className="w-4 h-4" />

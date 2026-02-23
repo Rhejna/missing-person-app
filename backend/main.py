@@ -8,6 +8,7 @@ from pymongo.server_api import ServerApi
 import shutil
 import os
 from config import MONGODB_URI, SECRET_KEY, ALGORITHM
+from utils import create_slug
 from logs import create_log
 from bson import ObjectId
 
@@ -207,60 +208,50 @@ def get_me(user_id: str = Depends(get_current_user)):
 @app.get("/cases")
 def get_cases():
     require_db()
-    # return cases
-    cases = list(
-        cases_collection.find(
-            {"deleted": False},
-            {"_id": 0}
-        )
-    )
-
+    cases = list(cases_collection.find({"deleted": False}))
+    for case in cases:
+        case["_id"] = str(case["_id"])  # Convert ObjectId to string for JSON
     return cases
 
 
 @app.get("/cases/{case_id}")
-def get_case(case_id: int):
+def get_case(case_id: str): # Changed to str
     require_db()
-    # This happens on the database server, which is extremely fast
-    case = cases_collection.find_one(
-        {
-            "id": case_id,
-            "deleted": False
-        }, 
-        {"_id": 0})
+    
+    try:
+        # We search by _id using the ObjectId wrapper
+        case = cases_collection.find_one(
+            {"_id": ObjectId(case_id), "deleted": False}
+        )
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    
+    # Convert _id to string so JSON can handle it
+    case["_id"] = str(case["_id"]) 
     return case
+
+@app.get("/cases/view/{slug}")
+def get_case_by_slug(slug: str):
+    require_db()
+    case = cases_collection.find_one({"slug": slug, "deleted": False})
+    
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    case["_id"] = str(case["_id"])
+    return case
+
 
 @app.get("/my-cases")
 def get_my_cases(user_id: str = Depends(get_current_user)):
     require_db()
-    cases = list(
-        cases_collection.find(
-            {"user_id": user_id, "deleted": False},
-            {"_id": 0}
-        )
-    )
+    cases = list(cases_collection.find({"user_id": user_id, "deleted": False}))
+    for case in cases:
+        case["_id"] = str(case["_id"])
     return cases
-
-
-@app.get("/cases/{case_id}/edit")
-def get_case_for_edit(case_id: int, user_id: str = Depends(get_current_user)):
-    require_db()
-
-    case = cases_collection.find_one(
-        {
-            "id": case_id,
-            "user_id": user_id,
-            "deleted": False
-        },
-        {"_id": 0}
-    )
-
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-
-    return case
 
 
 
@@ -268,6 +259,7 @@ def get_case_for_edit(case_id: int, user_id: str = Depends(get_current_user)):
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
+
 
 @app.post("/cases")
 async def create_case(
@@ -288,14 +280,16 @@ async def create_case(
 ):
     require_db()
     new_id = get_next_case_id()
+    full_name = f"{firstName} {lastName}"
+    case_slug = create_slug(full_name) # Generate the slug
 
     last_seen = lastSeenDate
     if lastSeenTime:
         last_seen += f" at {lastSeenTime}"
 
-    # Sauvegarde de l'image
+    # Image handling using the SLUG instead of ID for better privacy
     file_extension = photo.filename.split(".")[-1]
-    file_name = f"case_{new_id}.{file_extension}"
+    file_name = f"{case_slug}.{file_extension}" 
     file_path = os.path.join(UPLOAD_DIR, file_name)
     
     with open(file_path, "wb") as buffer:
@@ -303,8 +297,9 @@ async def create_case(
 
     case_document = {
         "id": new_id,
+        "slug": case_slug, # Added slug to DB
         "user_id": user_id,
-        "name": f"{firstName} {lastName}",
+        "name": full_name,
         "age": age,
         "lastSeen": last_seen,
         "location": lastSeenLocation,
@@ -328,16 +323,35 @@ async def create_case(
     }
 
     cases_collection.insert_one(case_document)
-    create_log(db, "case_created", user_id, f"Case ID: {new_id}", request)
-    case_document.pop("_id", None)
-
+    
+    # Log with slug for better tracking
+    create_log(db, "case_created", user_id, f"Case Slug: {case_slug}", request)
+    
+    case_document["_id"] = str(case_document["_id"])
     return case_document
 
+
+@app.get("/cases/{case_id}/edit")
+def get_case_for_edit(case_id: str, user_id: str = Depends(get_current_user)):
+    require_db()
+
+    try:
+        query = {"_id": ObjectId(case_id), "user_id": user_id, "deleted": False}
+        case = cases_collection.find_one(query)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+    
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found or not authorized")
+
+    case["_id"] = str(case["_id"])
+    return case
+    
 
 @app.put("/cases/{case_id}")
 async def update_case(
     request: Request,
-    case_id: int,
+    case_id: str,
     firstName: str = Form(...),
     lastName: str = Form(...),
     age: int = Form(...),
@@ -354,9 +368,12 @@ async def update_case(
 ):
     require_db()
 
-    case = cases_collection.find_one({"id": case_id, "user_id": user_id})
+    # Query using ObjectId
+    query = {"_id": ObjectId(case_id), "user_id": user_id}
+    case = cases_collection.find_one(query)
+    
     if not case:
-        raise HTTPException(status_code=404, detail="Not allowed")
+        raise HTTPException(status_code=404, detail="Not allowed or not found")
 
     # Combine them back into the DB format
     if lastSeenTime:
@@ -385,23 +402,25 @@ async def update_case(
 
         update_data["photo"] = f"/uploads/{file_name}"
 
-    cases_collection.update_one({"id": case_id}, {"$set": update_data})
-
-    # NEW LOG
-    create_log(db, "case_updated", user_id, f"Case ID: {case_id}", request)
-
+    cases_collection.update_one(query, {"$set": update_data})
+    
+    create_log(db, "case_updated", user_id, f"Case UID: {case_id}", request)
     return {"message": "Case updated successfully"}
 
+
 @app.patch("/cases/{case_id}/status")
-def update_status(request: Request, case_id: int, new_status: str, user_id: str = Depends(get_current_user)):
+def update_status(request: Request, case_id: str, new_status: str, user_id: str = Depends(get_current_user)):
     require_db()
 
-    case = cases_collection.find_one({"id": case_id, "user_id": user_id})
+    # Query using ObjectId
+    query = {"_id": ObjectId(case_id), "user_id": user_id}
+    case = cases_collection.find_one(query)
+    
     if not case:
         raise HTTPException(status_code=404)
 
     cases_collection.update_one(
-        {"id": case_id},
+        query,
         {
             "$set": {"status": new_status},
             "$push": {
@@ -416,26 +435,24 @@ def update_status(request: Request, case_id: int, new_status: str, user_id: str 
 
     # NEW LOG
     create_log(db, "status_changed", user_id, f"Case {case_id} moved to {new_status}", request)
-
     return {"message": "Status updated"}
 
 
 @app.patch("/cases/{case_id}/delete")
-def delete_case(request: Request, case_id: int, user_id: str = Depends(get_current_user)):
+def delete_case(request: Request, case_id: str, user_id: str = Depends(get_current_user)):
     require_db()
 
-    case = cases_collection.find_one({"id": case_id, "user_id": user_id})
+    # Query using ObjectId
+    query = {"_id": ObjectId(case_id), "user_id": user_id}
+    case = cases_collection.find_one(query)
+    
     if not case:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Not allowed or not found")
 
-    cases_collection.update_one(
-        {"id": case_id},
-        {"$set": {"deleted": True}}
-    )
+    cases_collection.update_one(query, {"$set": {"deleted": True}})
 
     # NEW LOG
     create_log(db, "case_archived", user_id, f"Case ID: {case_id} was deleted/archived", request)
-
     return {"message": "Case archived"}
 
 

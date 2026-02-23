@@ -1,3 +1,21 @@
+"""
+Records an audit log entry in the database for tracking user actions and system events.
+
+This function captures the action performed, the associated user, specific details, 
+and attempts to resolve the client's real IP address from the request headers 
+(handling proxies like Nginx/Cloudflare via X-Forwarded-For).
+
+Args:
+    db: The MongoDB database instance.
+    action (str): A descriptive string of the event (e.g., 'case_created', 'user_login').
+    user_id (str | None, optional): The unique identifier of the user performing the action.
+    details (str | None, optional): Additional context or metadata about the event.
+    request (Request | None, optional): The FastAPI request object used to extract client IP.
+
+Returns:
+    None: The function returns nothing and fails silently if the database is not provided.
+"""
+
 from datetime import datetime
 from fastapi import Request
 
