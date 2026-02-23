@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pymongo.mongo_client import MongoClient
+from pymongo import MongoClient, GEOSPHERE
 from pymongo.server_api import ServerApi
 import shutil
 import os
@@ -43,7 +43,7 @@ cases_collection = None
 
 @app.on_event("startup")
 def startup_db():
-    global client, db, cases_collection, users_collection
+    global client, db, cases_collection, users_collection, authorities_collection
     try:
         client = MongoClient(
             MONGODB_URI,
@@ -53,6 +53,7 @@ def startup_db():
         db = client["missing_persons"]
         cases_collection = db["cases"] 
         users_collection = db["users"]
+        authorities_collection = db["authorities"]
         print("✅ Connected to MongoDB")
     except Exception as e:
         print("❌ MongoDB connection failed:", e)
@@ -124,6 +125,8 @@ def require_db():
             status_code=503,
             detail="Database not connected"
         )
+    # Activate the index and treat the "location" field like a map.
+    authorities_collection.create_index([("location", GEOSPHERE)])
 
 @app.get("/")
 def root():
@@ -435,3 +438,51 @@ def delete_case(request: Request, case_id: int, user_id: str = Depends(get_curre
 
     return {"message": "Case archived"}
 
+
+def parse_authority(doc):
+    return {
+        "name": doc.get("name", "Unknown Authority"),
+        "type": doc.get("type", "ngo"),
+        "phones": doc.get("phones", []), # Ensure this is an array
+        "address": doc.get("address", "Address not available"),
+        "hours": doc.get("hours", "Contact for hours"),
+        "location": {
+            "lat": doc["location"]["coordinates"][1] if "location" in doc else 0,
+            "lng": doc["location"]["coordinates"][0] if "location" in doc else 0
+        }
+    }
+
+@app.get("/api/authorities")
+def get_nearest_authorities(lat: float, lng: float):
+    require_db()
+    
+    try:
+        pipeline = [
+            {
+                "$geoNear": {
+                    "near": { "type": "Point", "coordinates": [lng, lat] },
+                    "distanceField": "dist_meters",
+                    "spherical": True
+                }
+            },
+            { "$limit": 4 }
+        ]
+        
+        # Convert cursor to list immediately to catch errors early
+        results = list(authorities_collection.aggregate(pipeline))
+        
+        if not results:
+            return [] # Return empty list if no authorities found nearby
+
+        output = []
+        for doc in results:
+            parsed = parse_authority(doc)
+            dist = doc.get('dist_meters', 0)
+            parsed["distance"] = f"{round(dist / 1000, 1)} km"
+            output.append(parsed)
+            
+        return output
+        
+    except Exception as e:
+        print(f"❌ Geospatial Error: {e}")
+        raise HTTPException(status_code=500, detail="Database map index missing or data improperly formatted.")
