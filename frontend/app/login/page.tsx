@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -14,10 +14,17 @@ export default function LoginPage() {
   const [phone, setPhone] = useState("")
   const [fullName, setFullName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<"login" | "signup">("login")
+  const [activeTab, setActiveTab] = useState<"login" | "signup" | "admin">("login")
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect")
+  
+  // Added to the login page via URL parameter (`?admin=true`)
+  useEffect(() => {
+    if (searchParams?.get("admin") === "true") {
+      setActiveTab("admin")
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -107,6 +114,14 @@ export default function LoginPage() {
           >
             Create Account
           </button>
+          {activeTab === "admin" && (
+            <button
+              onClick={() => setActiveTab("admin")}
+              className={`pb-3 px-2 font-medium text-sm transition text-foreground border-b-2 border-primary`}
+            >
+              Admin
+            </button>
+          )}
         </div>
 
         {/* Form */}
@@ -126,7 +141,9 @@ export default function LoginPage() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Email Address</label>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              {activeTab === "admin" ? "Admin Email" : "Email Address"}
+            </label>
             <input
               type="email"
               value={email}
@@ -138,7 +155,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Password</label>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              {activeTab === "admin" ? "Admin Password" : "Password"}
+            </label>
             <input
               type="password"
               value={password}
@@ -171,7 +190,7 @@ export default function LoginPage() {
             disabled={isLoading}
             className="w-full bg-primary text-primary-foreground py-2 rounded-md font-semibold hover:bg-primary/90 transition disabled:opacity-50"
           >
-            {isLoading ? "Processing..." : activeTab === "login" ? "Sign In" : "Create Account"}
+            {isLoading ? "Processing..." : activeTab === "login" ? "Sign In" : activeTab === "signup" ? "Create Account" : "Admin Sign In"}
           </button>
         </form>
 
