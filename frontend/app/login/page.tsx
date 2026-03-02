@@ -18,10 +18,12 @@ export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect")
+  const [isAdminMode, setIsAdminMode] = useState(false) // New state to "remember" admin access
   
   // Added to the login page via URL parameter (`?admin=true`)
   useEffect(() => {
     if (searchParams?.get("admin") === "true") {
+      setIsAdminMode(true)
       setActiveTab("admin")
     }
   }, [searchParams])
@@ -104,22 +106,25 @@ export default function LoginPage() {
           >
             Sign In
           </button>
-          <button
-            onClick={() => setActiveTab("signup")}
-            className={`pb-3 px-2 font-medium text-sm transition ${
-              activeTab === "signup"
-                ? "text-foreground border-b-2 border-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Create Account
-          </button>
-          {activeTab === "admin" && (
+          {!isAdminMode && (
+            <button
+              onClick={() => setActiveTab("signup")}
+              className={`pb-3 px-2 font-medium text-sm transition ${
+                activeTab === "signup"
+                  ? "text-foreground border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Create Account
+            </button>
+          )}
+
+          {isAdminMode && (
             <button
               onClick={() => setActiveTab("admin")}
               className={`pb-3 px-2 font-medium text-sm transition text-foreground border-b-2 border-primary`}
             >
-              Admin
+              Admin Login
             </button>
           )}
         </div>
