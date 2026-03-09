@@ -15,10 +15,11 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"login" | "signup" | "admin">("login")
+  const [isAdminMode, setIsAdminMode] = useState(false) // New state to "remember" admin access
+
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect")
-  const [isAdminMode, setIsAdminMode] = useState(false) // New state to "remember" admin access
   
   // Added to the login page via URL parameter (`?admin=true`)
   useEffect(() => {
@@ -33,15 +34,20 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      const endpoint =
-        activeTab === "login"
-          ? "http://127.0.0.1:8000/auth/login"
-          : "http://127.0.0.1:8000/auth/signup"
+      // 1. Determine the correct Backend Endpoint
+      let endpoint = ""
+      if (activeTab === "login") {
+        endpoint = "http://127.0.0.1:8000/auth/login"
+      } else if (activeTab === "admin") {
+        endpoint = "http://127.0.0.1:8000/auth/admin-login"
+      } else {
+        endpoint = "http://127.0.0.1:8000/auth/signup"
+      }
 
-      const body =
-        activeTab === "login"
-          ? { email, password }
-          : { fullName, email, password, phone: "+237000000000" } // replace with real state
+      // 2. Build the request body
+      const body = activeTab === "signup" 
+        ? { fullName, email, password, phone: "+237000000000" } 
+        : { email, password }
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -56,19 +62,28 @@ export default function LoginPage() {
         return
       }
 
-      // Only login returns token
+      // 3. Handle successful response
       if (data.access_token) {
         localStorage.setItem("token", data.access_token)
 
-        // Redirect to homepage
-        router.push(redirect || "/")
+        if (data.role) {
+          localStorage.setItem("userRole", data.role)
+        }
+
+        // 4. Smart Redirect
+        if (activeTab === "admin") {
+          router.push("/admin/dashboard")
+        } else {
+          router.push(redirect || "/")
+        }
       } else {
         // After signup, automatically switch to login
         setActiveTab("login")
-        alert("Account created. Please login.")
+        alert("Account created successfully. Please sign in.")
       }
 
     } catch (err) {
+      console.error("Auth error:", err)
       alert("Server error")
     } finally {
       setIsLoading(false)

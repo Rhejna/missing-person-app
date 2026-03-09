@@ -190,6 +190,40 @@ def login(user: UserLogin, request: Request):
         "token_type": "bearer"
     }
 
+
+@app.post("/auth/admin-login")
+async def admin_login(data: UserLogin, request: Request):
+    require_db()
+
+    user = users_collection.find_one({"email": data.email})
+    
+    # 1. Check if user exists and password is correct
+    if not user or not verify_password(data.password, user["password"]):
+        create_log(db, "admin_login_failed", None, f"Failed admin login attempt: {data.email}", request)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+    # 2. Check the role field
+    if user.get("role") != "admin":
+        # Log this specifically! It might be a regular user trying to guess the admin URL
+        create_log(db, "admin_access_denied", str(user["_id"]), f"Unauthorized admin access attempt: {data.email}", request)
+        raise HTTPException(status_code=403, detail="Access denied: Admins only")
+
+    # 3. Successful Admin Login
+    token = create_access_token(
+        data={
+            "sub": user["email"], 
+            "user_id": str(user["_id"]), 
+            "role": "admin"
+        }
+    )
+    
+    create_log(db, "admin_login_success", str(user["_id"]), f"Admin login success: {data.email}", request)
+    
+    return {
+        "access_token": token, 
+        "token_type": "bearer"
+    }
+
 @app.get("/me")
 def get_me(user_id: str = Depends(get_current_user)):
     require_db()
