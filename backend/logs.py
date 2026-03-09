@@ -18,13 +18,9 @@ Returns:
 
 from datetime import datetime
 from fastapi import Request
+import database
 
-def create_log(db, action: str, user_id: str | None = None, details: str | None = None, request: Request | None = None):
-    if db is None:
-        return
-
-    logs_collection = db["logs"]
-
+def create_log(action: str, user_id: str | None = None, details: str | None = None, request: Request | None = None):
     ip = None
     if request:
         forwarded = request.headers.get("x-forwarded-for")
@@ -41,5 +37,5 @@ def create_log(db, action: str, user_id: str | None = None, details: str | None 
         "createdAt": datetime.utcnow()
     }
 
-    logs_collection.insert_one(log_document)
+    database.logs_collection.insert_one(log_document)
 

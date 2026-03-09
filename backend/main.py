@@ -7,9 +7,6 @@ from pymongo import MongoClient, GEOSPHERE
 from pymongo.server_api import ServerApi
 import shutil
 import os
-from config import MONGODB_URI, SECRET_KEY, ALGORITHM
-from utils import create_slug
-from logs import create_log
 from bson import ObjectId
 
 from pydantic import BaseModel, EmailStr
@@ -18,8 +15,24 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from config import MONGODB_URI, SECRET_KEY, ALGORITHM
+from utils import create_slug
+from logs import create_log
+from admin import router as admin_router
+from auth import (
+    UserSignup, 
+    UserLogin, 
+    hash_password, 
+    verify_password, 
+    create_access_token, 
+    get_current_user
+)
+import database
+
 app = FastAPI()
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+app.include_router(admin_router)
 
 # CORS configuration
 origins = [
@@ -37,81 +50,13 @@ app.add_middleware(
 
 security = HTTPBearer()
 
-# MongoDB connection
-client: MongoClient | None = None
-db = None
-cases_collection = None
-
 @app.on_event("startup")
 def startup_db():
-    global client, db, cases_collection, users_collection, authorities_collection
-    try:
-        client = MongoClient(
-            MONGODB_URI,
-            server_api=ServerApi("1")
-        )
-        client.admin.command("ping")
-        db = client["missing_persons"]
-        cases_collection = db["cases"] 
-        users_collection = db["users"]
-        authorities_collection = db["authorities"]
-        print("✅ Connected to MongoDB")
-    except Exception as e:
-        print("❌ MongoDB connection failed:", e)
-
-
+    database.connect_to_mongo()
 
 # --- Case creation ---
-class CaseCreate(BaseModel):
-    firstName: str
-    lastName: str
-    age: int
-    description: str
-    lastSeenLocation: str
-    lastSeenDate: str
-    lastSeenTime: Optional[str] = None
-    reporterName: str
-    reporterRelation: str
-    reporterPhone: str
-    reporterEmail: str
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-class UserSignup(BaseModel):
-    email: EmailStr
-    password: str
-    phone: str
-    fullName: str
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-def hash_password(password: str):
-    return pwd_context.hash(password)
-
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=60))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("user_id")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user_id
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
 def get_next_case_id():
-    last_case = cases_collection.find_one(
+    last_case = database.cases_collection.find_one(
         sort=[("id", -1)]
     )
     if last_case:
@@ -121,13 +66,13 @@ def get_next_case_id():
 
 # --- Routes ---
 def require_db():
-    if cases_collection is None:
+    if database.cases_collection is None:
         raise HTTPException(
             status_code=503,
             detail="Database not connected"
         )
     # Activate the index and treat the "location" field like a map.
-    authorities_collection.create_index([("location", GEOSPHERE)])
+    database.authorities_collection.create_index([("location", GEOSPHERE)])
 
 @app.get("/")
 def root():
@@ -138,7 +83,7 @@ def root():
 def signup(user: UserSignup, request: Request):
     require_db()
 
-    existing_user = users_collection.find_one({"email": user.email})
+    existing_user = database.users_collection.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -152,9 +97,9 @@ def signup(user: UserSignup, request: Request):
         "createdAt": datetime.utcnow()
     }
 
-    result = users_collection.insert_one(user_document)
+    result = database.users_collection.insert_one(user_document)
 
-    create_log(db, "user_signup", str(result.inserted_id), f"New user: {user.email}", request)
+    create_log("user_signup", str(result.inserted_id), f"New user: {user.email}", request)
 
     return {
         "message": "User created successfully",
@@ -166,14 +111,23 @@ def signup(user: UserSignup, request: Request):
 def login(user: UserLogin, request: Request):
     require_db()
 
-    db_user = users_collection.find_one({"email": user.email})
+    db_user = database.users_collection.find_one({"email": user.email})
 
     if not db_user:
-        create_log(db, "login_failed", None, f"Failed login: {user.email}", request)
+        create_log("login_failed", None, f"Failed login: {user.email}", request)
         raise HTTPException(status_code=400, detail="Invalid credentials")
+    
+    # --- NEW CHECK HERE ---
+    if db_user.get("blocked") is True:
+        create_log("login_blocked", str(db_user["_id"]), f"Blocked user tried to login: {user.email}", request)
+        raise HTTPException(
+            status_code=403, 
+            detail="Your account has been deactivated. Please contact support."
+        )
+    # ----------------------
 
     if not verify_password(user.password, db_user["password"]):
-        create_log(db, "login_failed", None, f"Failed login: {user.email}", request)
+        create_log("login_failed", None, f"Failed login: {user.email}", request)
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     access_token = create_access_token(
@@ -183,7 +137,7 @@ def login(user: UserLogin, request: Request):
         }
     )
 
-    create_log(db, "user_login", str(db_user["_id"]), f"Login success: {user.email}", request)
+    create_log("user_login", str(db_user["_id"]), f"Login success: {user.email}", request)
 
     return {
         "access_token": access_token,
@@ -195,17 +149,17 @@ def login(user: UserLogin, request: Request):
 async def admin_login(data: UserLogin, request: Request):
     require_db()
 
-    user = users_collection.find_one({"email": data.email})
+    user = database.users_collection.find_one({"email": data.email})
     
     # 1. Check if user exists and password is correct
     if not user or not verify_password(data.password, user["password"]):
-        create_log(db, "admin_login_failed", None, f"Failed admin login attempt: {data.email}", request)
+        create_log("admin_login_failed", None, f"Failed admin login attempt: {data.email}", request)
         raise HTTPException(status_code=401, detail="Invalid credentials")
         
     # 2. Check the role field
     if user.get("role") != "admin":
         # Log this specifically! It might be a regular user trying to guess the admin URL
-        create_log(db, "admin_access_denied", str(user["_id"]), f"Unauthorized admin access attempt: {data.email}", request)
+        create_log("admin_access_denied", str(user["_id"]), f"Unauthorized admin access attempt: {data.email}", request)
         raise HTTPException(status_code=403, detail="Access denied: Admins only")
 
     # 3. Successful Admin Login
@@ -217,7 +171,7 @@ async def admin_login(data: UserLogin, request: Request):
         }
     )
     
-    create_log(db, "admin_login_success", str(user["_id"]), f"Admin login success: {data.email}", request)
+    create_log("admin_login_success", str(user["_id"]), f"Admin login success: {data.email}", request)
     
     return {
         "access_token": token, 
@@ -228,7 +182,7 @@ async def admin_login(data: UserLogin, request: Request):
 def get_me(user_id: str = Depends(get_current_user)):
     require_db()
 
-    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    user = database.users_collection.find_one({"_id": ObjectId(user_id)})
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -242,7 +196,7 @@ def get_me(user_id: str = Depends(get_current_user)):
 @app.get("/cases")
 def get_cases():
     require_db()
-    cases = list(cases_collection.find({"deleted": False}))
+    cases = list(database.cases_collection.find({"deleted": False}))
     for case in cases:
         case["_id"] = str(case["_id"])  # Convert ObjectId to string for JSON
     return cases
@@ -254,7 +208,7 @@ def get_case(case_id: str): # Changed to str
     
     try:
         # We search by _id using the ObjectId wrapper
-        case = cases_collection.find_one(
+        case = database.cases_collection.find_one(
             {"_id": ObjectId(case_id), "deleted": False}
         )
     except:
@@ -270,7 +224,7 @@ def get_case(case_id: str): # Changed to str
 @app.get("/cases/view/{slug}")
 def get_case_by_slug(slug: str):
     require_db()
-    case = cases_collection.find_one({"slug": slug, "deleted": False})
+    case = database.cases_collection.find_one({"slug": slug, "deleted": False})
     
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -282,7 +236,7 @@ def get_case_by_slug(slug: str):
 @app.get("/my-cases")
 def get_my_cases(user_id: str = Depends(get_current_user)):
     require_db()
-    cases = list(cases_collection.find({"user_id": user_id, "deleted": False}))
+    cases = list(database.cases_collection.find({"user_id": user_id, "deleted": False}))
     for case in cases:
         case["_id"] = str(case["_id"])
     return cases
@@ -356,10 +310,10 @@ async def create_case(
         "comments": [],
     }
 
-    cases_collection.insert_one(case_document)
+    database.cases_collection.insert_one(case_document)
     
     # Log with slug for better tracking
-    create_log(db, "case_created", user_id, f"Case Slug: {case_slug}", request)
+    create_log("case_created", user_id, f"Case Slug: {case_slug}", request)
     
     case_document["_id"] = str(case_document["_id"])
     return case_document
@@ -371,7 +325,7 @@ def get_case_for_edit(case_id: str, user_id: str = Depends(get_current_user)):
 
     try:
         query = {"_id": ObjectId(case_id), "user_id": user_id, "deleted": False}
-        case = cases_collection.find_one(query)
+        case = database.cases_collection.find_one(query)
     except:
         raise HTTPException(status_code=400, detail="Invalid ID format")
     
@@ -404,7 +358,7 @@ async def update_case(
 
     # Query using ObjectId
     query = {"_id": ObjectId(case_id), "user_id": user_id}
-    case = cases_collection.find_one(query)
+    case = database.cases_collection.find_one(query)
     
     if not case:
         raise HTTPException(status_code=404, detail="Not allowed or not found")
@@ -436,9 +390,9 @@ async def update_case(
 
         update_data["photo"] = f"/uploads/{file_name}"
 
-    cases_collection.update_one(query, {"$set": update_data})
+    database.cases_collection.update_one(query, {"$set": update_data})
     
-    create_log(db, "case_updated", user_id, f"Case UID: {case_id}", request)
+    create_log("case_updated", user_id, f"Case UID: {case_id}", request)
     return {"message": "Case updated successfully"}
 
 
@@ -448,12 +402,12 @@ def update_status(request: Request, case_id: str, new_status: str, user_id: str 
 
     # Query using ObjectId
     query = {"_id": ObjectId(case_id), "user_id": user_id}
-    case = cases_collection.find_one(query)
+    case = database.cases_collection.find_one(query)
     
     if not case:
         raise HTTPException(status_code=404)
 
-    cases_collection.update_one(
+    database.cases_collection.update_one(
         query,
         {
             "$set": {"status": new_status},
@@ -468,7 +422,7 @@ def update_status(request: Request, case_id: str, new_status: str, user_id: str 
     )
 
     # NEW LOG
-    create_log(db, "status_changed", user_id, f"Case {case_id} moved to {new_status}", request)
+    create_log("status_changed", user_id, f"Case {case_id} moved to {new_status}", request)
     return {"message": "Status updated"}
 
 
@@ -478,15 +432,15 @@ def delete_case(request: Request, case_id: str, user_id: str = Depends(get_curre
 
     # Query using ObjectId
     query = {"_id": ObjectId(case_id), "user_id": user_id}
-    case = cases_collection.find_one(query)
+    case = database.cases_collection.find_one(query)
     
     if not case:
         raise HTTPException(status_code=404, detail="Not allowed or not found")
 
-    cases_collection.update_one(query, {"$set": {"deleted": True}})
+    database.cases_collection.update_one(query, {"$set": {"deleted": True}})
 
     # NEW LOG
-    create_log(db, "case_archived", user_id, f"Case ID: {case_id} was deleted/archived", request)
+    create_log("case_archived", user_id, f"Case ID: {case_id} was deleted/archived", request)
     return {"message": "Case archived"}
 
 
@@ -520,7 +474,7 @@ def get_nearest_authorities(lat: float, lng: float):
         ]
         
         # Convert cursor to list immediately to catch errors early
-        results = list(authorities_collection.aggregate(pipeline))
+        results = list(database.authorities_collection.aggregate(pipeline))
         
         if not results:
             return [] # Return empty list if no authorities found nearby
